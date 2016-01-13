@@ -78,6 +78,33 @@ static int LoadFile(const char* filename,
   return 1;
 }
 
+static int LoadStdin(unsigned char** out, size_t* outsize) {
+  const size_t CHAR_SIZE = sizeof(unsigned char);
+  const size_t buffer_size = 1024;
+  *out = (unsigned char*) malloc(buffer_size);
+  *outsize = 0;
+
+  for (;;) {
+    size_t bytes = fread(*out + (CHAR_SIZE * *outsize), CHAR_SIZE, buffer_size, stdin);
+    *outsize += bytes;
+    if (bytes >= buffer_size) {
+      *out = realloc(*out, *outsize * 2);
+    } else if(feof(stdin)) {
+      break;
+    }
+  }
+
+  if(*outsize > 2147483647) {
+    fprintf(stderr,"Files larger than 2GB are not supported.\n");
+    exit(EXIT_FAILURE);
+  }
+
+  /* free unused memory */
+  *out = realloc(*out, *outsize);
+  assert(!(*outsize) || out);
+  return 1;
+}
+
 /*
 Saves a file from a memory array, overwriting the file if it existed.
 */
@@ -104,7 +131,12 @@ static void CompressFile(const ZopfliOptions* options,
   size_t insize;
   unsigned char* out = 0;
   size_t outsize = 0;
-  if (!LoadFile(infilename, &in, &insize)) {
+  if (!infilename) {
+    if(!LoadStdin(&in, &insize)) {
+      fprintf(stderr, "Error reading from STDIN");
+      return;
+    }
+  } else if (!LoadFile(infilename, &in, &insize)) {
     fprintf(stderr, "Invalid filename: %s\n", infilename);
     return;
   }
@@ -214,8 +246,10 @@ int main(int argc, char* argv[]) {
   }
 
   if (!filename) {
-    fprintf(stderr,
-            "Please provide filename\nFor help, type: %s -h\n", argv[0]);
+    /* read from stdin */
+    char* outfilename = 0;
+    CompressFile(&options, output_type, 0, outfilename);
+    free(outfilename);
   }
 
   return 0;
